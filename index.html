@@ -1,0 +1,28 @@
+<html>
+	<head>
+		<title>ChromeBLE</title>
+		<script src="index.js"></script>
+	</head>
+	<body>
+		<h1>ChromeBLE</h1>
+		<button id="connect-btn" >connect</button>
+		<div>
+			<br>
+			<br>
+			<h3>Sensors status</h3>
+			<span>IMU </span><span id="IMU-state"></span><br>
+			<span>PPG </span><span id="PPG-state"></span>
+		</div>
+	</body>
+</html>
+
+<style>
+	.status-ok:after {
+		color: green;
+		content: "OK";
+	}
+	.status-ko:after {
+		color: red;
+		content: "KO";
+	}
+</style>
