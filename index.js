@@ -2,40 +2,196 @@ const BLE_ERROR_SERVICE_UUID = 0x1200;
 const BLE_ERROR_CHARACTERISTIC_UUID = 0x1201;
 const BLE_PPG_SERVICE_UUID = 0x1165;
 const BLE_PPG_CHARACTERISTIC_UUID = 0x1166;
+const BLE_IMU_SERVICE_UUID = 0x1101;
+const BLE_ACC_CHARACTERISTIC_UUID = 0x1102;
+const BLE_GYR_CHARACTERISTIC_UUID = 0x1103;
+const BLE_MAG_CHARACTERISTIC_UUID = 0x1104;
 let errorStatus;
+let PPGRedLine;
+let PPGGreenLine;
+let PPGIrLine;
+let IMUAccXLine;
+let IMUAccYLine;
+let IMUAccZLine;
+let IMUGyrXLine;
+let IMUGyrYLine;
+let IMUGyrZLine;
+let IMUMagXLine;
+let IMUMagYLine;
+let IMUMagZLine;
+let gyrData = {x: null, y: null, z: null}
+let pitch
+let roll
+
+function int16ToFloat32(inputArray, startIndex, length) {
+	var output = new Float32Array(inputArray.length-startIndex);
+	for (var i = startIndex; i < length; i++) {
+		var int = inputArray[i];
+		// If the high bit is on, then it is a negative number, and actually counts backwards.
+		var float = (int >= 0x8000) ? -(0x10000 - int) / 0x8000 : int / 0x7FFF;
+		output[i] = float;
+	}
+	return output;
+}
 
 async function onConnectButtonClick() {
   console.log("Requesting any Bluetooth device...");
   const device = await navigator.bluetooth.requestDevice({
     // open dialog for the user to pair with a device
     acceptAllDevices: true,
-    optionalServices: [BLE_ERROR_SERVICE_UUID],
+    optionalServices: [BLE_ERROR_SERVICE_UUID, BLE_IMU_SERVICE_UUID, BLE_PPG_SERVICE_UUID],
   });
   console.log("Requested " + device.name + " (" + device.id + ")");
 
   const server = await device.gatt.connect(); // Connects to the chosen device
   console.log("server", server);
 
-  const service = await server.getPrimaryService(BLE_ERROR_SERVICE_UUID); // Get the selected service
-  console.log("service", service);
+  const errorService = await server.getPrimaryService(BLE_ERROR_SERVICE_UUID); // Get the selected service
+  console.log("service", errorService);
 
-  const errorCharacteristic = await service.getCharacteristic(BLE_ERROR_CHARACTERISTIC_UUID); // Get the selected characteristic
+  const errorCharacteristic = await errorService.getCharacteristic(BLE_ERROR_CHARACTERISTIC_UUID); // Get the selected characteristic
   console.log("characteristic", errorCharacteristic);
 
   const value = await errorCharacteristic.readValue(); // Read the error buffer
   const IMUError = value.getUint8(0); // Extract the value for each sensors
   const PPGError = value.getUint8(1);
-  console.log('IMUError: ', IMUError, ' PPGError: ', PPGError)
+  console.log("IMUError: ", IMUError, " PPGError: ", PPGError);
   document.getElementById("IMU-state").classList = IMUError ? "status-ko" : "status-ok"; // Update DOM
   document.getElementById("PPG-state").classList = PPGError ? "status-ko" : "status-ok";
 
-  //   await errorCharacteristic.startNotifications() // Enable notification from the characteristic
-  //   console.log('Notifications started')
-  //   errorCharacteristic.addEventListener('characteristicvaluechanged', handleErrorNotifications)
+  const PPGservice = await server.getPrimaryService(BLE_PPG_SERVICE_UUID); // Get the selected service
+  console.log("Error service", PPGservice);
+
+  const PPGCharacteristic = await PPGservice.getCharacteristic(BLE_PPG_CHARACTERISTIC_UUID); // Get the selected characteristic
+  console.log("Error characteristic", PPGCharacteristic);
+
+  await PPGCharacteristic.startNotifications(); // Enable notification from the characteristic
+  console.log("PPGCharacteristic Notifications started");
+  PPGCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
+    const value = event.target.value;
+    const timestamp = (value.getUint8(0) << 24) | (value.getUint8(1) << 16) | (value.getUint8(2) << 8) | value.getUint8(3); // shifts 4 Uint8 to make a Uint32
+    const redPPG = (value.getUint8(4) << 24) | (value.getUint8(5) << 16) | (value.getUint8(6) << 8) | value.getUint8(7);
+    const irPPG = (value.getUint8(8) << 24) | (value.getUint8(9) << 16) | (value.getUint8(10) << 8) | value.getUint8(11);
+    const greenPPG = (value.getUint8(12) << 24) | (value.getUint8(13) << 16) | (value.getUint8(14) << 8) | value.getUint8(15);
+    //console.log("timestamp: ", timestamp, "redPPG: ", redPPG, "irPPG: ", irPPG, "greenPPG: ", greenPPG);
+    PPGRedLine.append(new Date().getTime(), redPPG);
+    PPGGreenLine.append(new Date().getTime(), greenPPG);
+	PPGIrLine.append(new Date().getTime(), irPPG);
+	//console.log(new Date().getTime())
+  });
+
+  const IMUservice = await server.getPrimaryService(BLE_IMU_SERVICE_UUID); // Get the selected service
+  console.log("Error service", IMUservice);
+
+  const ACCCharacteristic = await IMUservice.getCharacteristic(BLE_ACC_CHARACTERISTIC_UUID); // Get the selected characteristic
+  console.log("Error characteristic", ACCCharacteristic);
+
+  const GYRCharacteristic = await IMUservice.getCharacteristic(BLE_GYR_CHARACTERISTIC_UUID); // Get the selected characteristic
+  console.log("Error characteristic", GYRCharacteristic);
+
+  const MAGCharacteristic = await IMUservice.getCharacteristic(BLE_ACC_CHARACTERISTIC_UUID); // Get the selected characteristic
+  console.log("Error characteristic", MAGCharacteristic);
+
+  await ACCCharacteristic.startNotifications(); // Enable notification from the characteristic
+  console.log("ACCCharacteristic Notifications started");
+  ACCCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
+	const value = event.target.value;
+    const timestamp = (value.getUint8(0) << 24) | (value.getUint8(1) << 16) | (value.getUint8(2) << 8) | value.getUint8(3);
+    const x = ((value.getInt16(5) * -1) * 16) / 0x8000
+    const y = ((value.getInt16(7) * -1) * 16) / 0x8000
+	const z = ((value.getInt16(9) * -1) * 16) / 0x8000
+	IMUAccXLine.append(new Date().getTime(), x)
+	IMUAccYLine.append(new Date().getTime(), y)
+	IMUAccZLine.append(new Date().getTime(), z)
+	// gyrData = {x, y, z}
+
+	//console.log("timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
+  });
+
+  await GYRCharacteristic.startNotifications(); // Enable notification from the characteristic
+  console.log("GyrCharacteristic Notifications started");
+  GYRCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
+	const value = event.target.value;
+    const timestamp = (value.getUint8(0) << 24) | (value.getUint8(1) << 16) | (value.getUint8(2) << 8) | value.getUint8(3);
+    const x = ((value.getInt16(5) * -1) * 2000) / 0x8000
+    const y = ((value.getInt16(7) * -1) * 2000) / 0x8000
+	const z = ((value.getInt16(9) * -1) * 2000) / 0x8000
+	IMUGyrXLine.append(new Date().getTime(), x)
+	IMUGyrYLine.append(new Date().getTime(), y)
+	IMUGyrZLine.append(new Date().getTime(), z)
+	pitch = Math.atan2(y, (Math.sqrt(x**2 + y**2)))
+	roll = Math.atan2(-x ,( Math.sqrt(y**2 + z**2)));
+	console.log(pitch, roll)
+	//console.log("gyro timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
+  });
 }
 
 window.onload = () => {
   // wait for the page to load so that the DOM elements are available
   console.log(navigator.bluetooth ? "Web-BLE Available" : "Web-BLE Unavailable");
   document.getElementById("connect-btn").addEventListener("click", onConnectButtonClick);
-};
+  let PPGRedSmoothie = new SmoothieChart(); // Create SmoothieChart objects
+  let PPGiRSmoothie = new SmoothieChart();
+  let PPGGreenSmoothie = new SmoothieChart();
+  let IMUAccSmoothie = new SmoothieChart()
+  let IMUGyrSmoothie = new SmoothieChart()
+  let IMUMagSmoothie = new SmoothieChart()
+  PPGRedLine = new TimeSeries(); // Create a TimeSeries to store the data for each sensor
+  PPGGreenLine = new TimeSeries();
+  PPGIrLine = new TimeSeries();
+  IMUAccXLine = new TimeSeries()
+  IMUAccYLine = new TimeSeries()
+  IMUAccZLine = new TimeSeries()
+  IMUGyrXLine = new TimeSeries()
+  IMUGyrYLine = new TimeSeries()
+  IMUGyrZLine = new TimeSeries()
+  IMUMagXLine = new TimeSeries()
+  IMUMagYLine = new TimeSeries()
+  IMUMagZLine = new TimeSeries()
+  PPGRedSmoothie.streamTo(document.getElementById("smoothie-ppg-red")); // Link the SoothieChart object to its canvas in the HTML
+  PPGRedSmoothie.addTimeSeries(PPGRedLine, { strokeStyle: "rgb(255, 0, 0)", lineWidth: 3 }); // Link TimeSeries to the SmoothieChart object and add a bit of color
+  PPGiRSmoothie.streamTo(document.getElementById("smoothie-ppg-ir"));
+  PPGiRSmoothie.addTimeSeries(PPGIrLine, { strokeStyle: "rgb(171, 14, 14)", lineWidth: 3 });
+  PPGGreenSmoothie.streamTo(document.getElementById("smoothie-ppg-green"));
+  PPGGreenSmoothie.addTimeSeries(PPGGreenLine, { strokeStyle: "rgb(0, 255, 0)", lineWidth: 3 });
+  IMUAccSmoothie.streamTo(document.getElementById("smoothie-imu-acc"));
+  IMUAccSmoothie.addTimeSeries(IMUAccXLine, { strokeStyle: "rgb(255, 0, 0)", lineWidth: 3 });
+  IMUAccSmoothie.addTimeSeries(IMUAccYLine, { strokeStyle: "rgb(0, 255, 0)", lineWidth: 3 });
+  IMUAccSmoothie.addTimeSeries(IMUAccZLine, { strokeStyle: "rgb(0, 0, 255)", lineWidth: 3 });
+  IMUGyrSmoothie.streamTo(document.getElementById("smoothie-imu-gyr"));
+  IMUGyrSmoothie.addTimeSeries(IMUGyrXLine, { strokeStyle: "rgb(255, 0, 0)", lineWidth: 3 });
+  IMUGyrSmoothie.addTimeSeries(IMUGyrYLine, { strokeStyle: "rgb(0, 255, 0)", lineWidth: 3 });
+  IMUGyrSmoothie.addTimeSeries(IMUGyrZLine, { strokeStyle: "rgb(0, 0, 255)", lineWidth: 3 });
+  IMUMagSmoothie.streamTo(document.getElementById("smoothie-imu-mag"));
+  IMUMagSmoothie.addTimeSeries(IMUMagXLine, { strokeStyle: "rgb(255, 0, 0)", lineWidth: 3 });
+  IMUMagSmoothie.addTimeSeries(IMUMagYLine, { strokeStyle: "rgb(0, 255, 0)", lineWidth: 3 });
+  IMUMagSmoothie.addTimeSeries(IMUMagZLine, { strokeStyle: "rgb(0, 0, 255)", lineWidth: 3 });
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+  
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  document.body.appendChild( renderer.domElement )
+
+  const geometry = new THREE.BoxGeometry();
+	 const material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+const cube = new THREE.Mesh( geometry, material );
+scene.add( cube );
+function animate() {
+	requestAnimationFrame( animate );
+	// cube.rotation.x += 0.01;
+	// cube.rotation.y += 0.01;
+	//console.log(gyrData)
+	cube.rotation.x = pitch
+	// cube.rotation.y = gyrData.z
+	// cube.rotation.z = gyrData.z
+	// console.log(cube.rotation.x)
+
+	renderer.render( scene, camera );
+}
+animate();
+
+camera.position.z = 5;
+
+}
