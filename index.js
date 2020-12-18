@@ -22,6 +22,7 @@ let IMUMagZLine;
 let gyrData = {x: null, y: null, z: null}
 let pitch
 let roll
+let yaw
 
 function int16ToFloat32(inputArray, startIndex, length) {
 	var output = new Float32Array(inputArray.length-startIndex);
@@ -89,7 +90,7 @@ async function onConnectButtonClick() {
   const GYRCharacteristic = await IMUservice.getCharacteristic(BLE_GYR_CHARACTERISTIC_UUID); // Get the selected characteristic
   console.log("Error characteristic", GYRCharacteristic);
 
-  const MAGCharacteristic = await IMUservice.getCharacteristic(BLE_ACC_CHARACTERISTIC_UUID); // Get the selected characteristic
+  const MAGCharacteristic = await IMUservice.getCharacteristic(BLE_MAG_CHARACTERISTIC_UUID); // Get the selected characteristic
   console.log("Error characteristic", MAGCharacteristic);
 
   await ACCCharacteristic.startNotifications(); // Enable notification from the characteristic
@@ -100,12 +101,22 @@ async function onConnectButtonClick() {
     const x = ((value.getInt16(5) * -1) * 16) / 0x8000
     const y = ((value.getInt16(7) * -1) * 16) / 0x8000
 	const z = ((value.getInt16(9) * -1) * 16) / 0x8000
-	IMUAccXLine.append(new Date().getTime(), x)
-	IMUAccYLine.append(new Date().getTime(), y)
-	IMUAccZLine.append(new Date().getTime(), z)
+	// pitch = 180 * Math.atan(x/Math.sqrt(y*y + z*z))/Math.PI;
+	// roll = 180 * Math.atan(y/Math.sqrt(x*x + z*z))/Math.PI;
+	// yaw = 180 * Math.atan(z/Math.sqrt(x*x + z*z))/Math.PI;
+	pitch = Math.atan2(y, (Math.sqrt(x**2 + y**2)))
+	roll = Math.atan2(-x ,( Math.sqrt(y**2 + z**2)));
+	
+
+	console.log(roll, pitch, yaw)
+	IMUAccXLine.append(new Date().getTime(), roll)
+	IMUAccYLine.append(new Date().getTime(), pitch)
+	IMUAccZLine.append(new Date().getTime(), yaw)
+
+	// console.log(pitch, roll)
 	// gyrData = {x, y, z}
 
-	//console.log("timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
+	//console.log("acc timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
   });
 
   await GYRCharacteristic.startNotifications(); // Enable notification from the characteristic
@@ -119,9 +130,25 @@ async function onConnectButtonClick() {
 	IMUGyrXLine.append(new Date().getTime(), x)
 	IMUGyrYLine.append(new Date().getTime(), y)
 	IMUGyrZLine.append(new Date().getTime(), z)
-	pitch = Math.atan2(y, (Math.sqrt(x**2 + y**2)))
-	roll = Math.atan2(-x ,( Math.sqrt(y**2 + z**2)));
-	console.log(pitch, roll)
+	//console.log("gyro timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
+  });
+
+  await MAGCharacteristic.startNotifications(); // Enable notification from the characteristic
+  console.log("magCharacteristic Notifications started");
+  MAGCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
+	const value = event.target.value;
+	//console.log("mag" ,value)
+    const timestamp = (value.getUint8(0) << 24) | (value.getUint8(1) << 16) | (value.getUint8(2) << 8) | value.getUint8(3);
+    const x = value.getFloat32(4)
+	const y = value.getFloat32(8)
+	const z = value.getFloat32(12)
+	IMUMagXLine.append(new Date().getTime(), x)
+	IMUMagYLine.append(new Date().getTime(), y)
+	IMUMagZLine.append(new Date().getTime(), z)
+	// console.log(x)
+	let Yh = (y * Math.cos(roll)) - (z * Math.sin(roll));
+	let Xh = (x * Math.cos(pitch))+(y * Math.sin(roll)*Math.sin(pitch)) + (z * Math.cos(roll) * Math.sin(pitch));
+	yaw = Math.atan2(Yh, Xh)
 	//console.log("gyro timestamp: ", timestamp, "x: ", x, "y: ", y, "z: ", z);
   });
 }
@@ -166,32 +193,5 @@ window.onload = () => {
   IMUMagSmoothie.addTimeSeries(IMUMagXLine, { strokeStyle: "rgb(255, 0, 0)", lineWidth: 3 });
   IMUMagSmoothie.addTimeSeries(IMUMagYLine, { strokeStyle: "rgb(0, 255, 0)", lineWidth: 3 });
   IMUMagSmoothie.addTimeSeries(IMUMagZLine, { strokeStyle: "rgb(0, 0, 255)", lineWidth: 3 });
-
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
-  
-  const renderer = new THREE.WebGLRenderer();
-  renderer.setSize( window.innerWidth, window.innerHeight );
-  document.body.appendChild( renderer.domElement )
-
-  const geometry = new THREE.BoxGeometry();
-	 const material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
-const cube = new THREE.Mesh( geometry, material );
-scene.add( cube );
-function animate() {
-	requestAnimationFrame( animate );
-	// cube.rotation.x += 0.01;
-	// cube.rotation.y += 0.01;
-	//console.log(gyrData)
-	cube.rotation.x = pitch
-	// cube.rotation.y = gyrData.z
-	// cube.rotation.z = gyrData.z
-	// console.log(cube.rotation.x)
-
-	renderer.render( scene, camera );
-}
-animate();
-
-camera.position.z = 5;
 
 }
